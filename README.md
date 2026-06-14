@@ -40,8 +40,16 @@ docker build --build-arg RERANKER_ARCH=avx2 -t onramp-reranker:dev .
 - ⚠️ **빌드 시점 HF egress + 시간 필요**(base 모델 ~2.2GB 다운로드). 모델 무변경 재빌드 시 BuildKit 캐시 권장.
 - 런타임은 tokenizer를 이미지 내 디렉터리에서 **오프라인**(`local_files_only`) 로드 → 런타임 HF 네트워크·writable cache 불필요.
 
-> 로컬에서 모델만 먼저 만들고 싶으면: `pip install ".[build]" && python scripts/build_onnx.py --out models/bge-reranker-onnx-int8 --arch avx2`
-> (대안: 사전생성 아티팩트 COPY / PVC 마운트 — 인프라 결정 시 Dockerfile 조정.)
+### 방식 2: 사전 생성 모델 COPY (`Dockerfile.prebuilt`) — 에뮬레이션·저메모리 환경 권장
+빌드 동봉(방식 1)은 builder가 fp32 모델을 메모리에 올려 양자화하므로 **arm맥의 QEMU 에뮬레이션·낮은 Docker 메모리에선 OOM(Killed)** 날 수 있고, **빌드 시 HF 접근**도 필요하다. 이미 만든 모델이 있으면 그걸 그대로 굽는다(양자화·HF 다운로드 없음):
+```bash
+# 사전 생성 모델을 빌드 컨텍스트로 (models/ 는 .gitignore)
+cp -r /path/to/bge-reranker-onnx-int8-avx2/.  models/bge-reranker-onnx-int8/
+docker buildx build --platform linux/amd64 -f Dockerfile.prebuilt -t onramp-reranker:dev --load .
+```
+→ runtime 의존성 설치 + 모델 COPY만이라 **빠르고 OOM 없음**. (방식 1 build-bake는 메모리·HF 충분한 **CI(native amd64)** 에서.)
+
+> 모델을 새로 만들려면: `pip install ".[build]" && python scripts/build_onnx.py --out models/bge-reranker-onnx-int8 --arch avx2`
 
 ## 환경변수
 | 변수 | 기본 | 설명 |

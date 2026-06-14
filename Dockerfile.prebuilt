@@ -1,0 +1,36 @@
+# 사전 생성 모델 COPY 방식 (빌드 중 양자화·HF 다운로드 없음 — 에뮬레이션/저메모리 환경용).
+# 빌드 전: 사전 생성한 모델 디렉터리를 빌드 컨텍스트의 models/bge-reranker-onnx-int8 로 둔다.
+#   예) cp -r /path/to/bge-reranker-onnx-int8-avx2  models/bge-reranker-onnx-int8
+# 빌드:  docker buildx build --platform linux/amd64 -f Dockerfile.prebuilt -t <image> --load .
+# (build-bake 방식은 Dockerfile 참조 — CPU/메모리 충분한 CI(native amd64)에서 권장)
+FROM python:3.11-slim AS runtime
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    HF_HUB_OFFLINE=1 \
+    TRANSFORMERS_OFFLINE=1 \
+    RERANKER_ONNX_DIR=/models/bge-reranker-onnx-int8 \
+    RERANKER_ONNX_FILE=model_quantized.onnx
+
+WORKDIR /app
+
+RUN addgroup --system onramp \
+    && adduser --system --ingroup onramp --home /app onramp
+
+COPY --chown=onramp:onramp pyproject.toml ./
+COPY --chown=onramp:onramp app ./app
+
+# 런타임 의존성만(torch-free).
+RUN pip install --upgrade pip && pip install .
+
+# 사전 생성 모델·tokenizer 동봉 (빌드 컨텍스트의 models/bge-reranker-onnx-int8).
+COPY --chown=onramp:onramp models/bge-reranker-onnx-int8 /models/bge-reranker-onnx-int8
+
+USER onramp
+EXPOSE 8080
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=3).read()" || exit 1
+
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]

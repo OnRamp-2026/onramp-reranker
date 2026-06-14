@@ -5,7 +5,7 @@ __pycache__
 .pytest_cache
 .mypy_cache
 .ruff_cache
-models/
-*.onnx
+# models/ 는 제외하지 않음 — Dockerfile.prebuilt가 models/bge-reranker-onnx-int8 을 COPY.
+# (build-bake Dockerfile은 컨텍스트의 models/를 안 쓰므로 무관)
 .env
 tests/
