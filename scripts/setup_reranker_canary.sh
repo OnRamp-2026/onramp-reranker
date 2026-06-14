@@ -5,6 +5,9 @@
 #   USE_TORCH=0 으로 torch 미적재(경량 이미지 메모리 모사).
 set -euo pipefail
 
+# macOS kubectl 1.30+ websocket cp/exec 버그("write: result too large") 회피 → SPDY 사용.
+export KUBECTL_REMOTE_COMMAND_WEBSOCKETS=false
+
 ns="${NAMESPACE:-onramp}"
 pod="${POD_NAME:-onramp-reranker-canary}"
 model_dir="${1:?usage: $0 /absolute/path/to/bge-reranker-onnx-int8}"
