@@ -28,18 +28,20 @@ RERANKER_ONNX_DIR=/path/to/bge-reranker-onnx-int8 uvicorn app.main:app --port 80
 pytest -q
 ```
 
-## 모델 아티팩트 (~560MB, git 미포함)
-`model_quantized.onnx` + tokenizer 파일이 든 디렉터리가 필요하다. **이미지에 동봉하지 않으며**(`.gitignore`), 공급 방식은 **미정(팀 결정)**:
-- (A) 빌드 시 생성(ONNX 변환·int8 양자화) — `pip install ".[build]"` 후 변환 스크립트
-- (B) 사전 생성 아티팩트를 checksum 고정해 이미지/스토리지에서 COPY
-- (C) PVC/initContainer로 런타임 마운트
+## 모델 아티팩트 — **빌드 동봉(build-time bake)**
+모델(`model_quantized.onnx` + tokenizer, ~560MB)은 **멀티스테이지 Docker 빌드에서 생성해 이미지에 굽는다**(`scripts/build_onnx.py`). git에는 모델을 커밋하지 않는다(`.gitignore`).
 
-생성(예, onramp-api의 빌드 스크립트 참고, 운영 CPU에 맞는 arch):
 ```bash
-# avx512_vnni 미지원 노드 → avx2 또는 avx512
-python build_reranker_onnx.py --out models/bge-reranker-onnx-int8 --arch avx2
+# 운영 노드 CPU에 맞춰 arch (avx512_vnni 미지원 → avx2 기본)
+docker build --build-arg RERANKER_ARCH=avx2 -t onramp-reranker:dev .
 ```
-런타임은 `RERANKER_ONNX_DIR`이 가리키는 디렉터리에서 tokenizer를 **오프라인**(`local_files_only`)으로 로드한다(HF 네트워크·writable cache 불필요).
+- **builder 스테이지**: torch+optimum로 HF에서 base 모델 다운로드 → ONNX 변환 → int8 양자화. (최종 이미지엔 미포함)
+- **runtime 스테이지**: torch-free 경량 + builder가 구운 모델만 COPY.
+- ⚠️ **빌드 시점 HF egress + 시간 필요**(base 모델 ~2.2GB 다운로드). 모델 무변경 재빌드 시 BuildKit 캐시 권장.
+- 런타임은 tokenizer를 이미지 내 디렉터리에서 **오프라인**(`local_files_only`) 로드 → 런타임 HF 네트워크·writable cache 불필요.
+
+> 로컬에서 모델만 먼저 만들고 싶으면: `pip install ".[build]" && python scripts/build_onnx.py --out models/bge-reranker-onnx-int8 --arch avx2`
+> (대안: 사전생성 아티팩트 COPY / PVC 마운트 — 인프라 결정 시 Dockerfile 조정.)
 
 ## 환경변수
 | 변수 | 기본 | 설명 |
