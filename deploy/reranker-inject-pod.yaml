@@ -1,0 +1,28 @@
+# ⚠️ 임시 검증 — 레지스트리 push 없이 실제 amd64 노드에서 리랭커 메모리 확인 (#72 1단계).
+#   onramp-api 운영 이미지(Harbor에 이미 있음, python+fastapi+uvicorn+transformers 포함)를 base로
+#   reranker 코드/모델/onnxruntime를 주입해 띄운다. 운영 Deployment/GitOps와 무관. setup_reranker_canary.sh 사용.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: onramp-reranker-canary
+  namespace: onramp
+spec:
+  restartPolicy: Never
+  imagePullSecrets:
+    - name: harbor-image-pull-secret
+  nodeSelector:
+    kubernetes.io/arch: amd64
+  containers:
+    - name: reranker
+      # onramp-api 운영 이미지(주입 base — 코드/모델은 런타임 cp). onramp-api가 쓰는 digest.
+      image: amdp-registry.skala-ai.com/skala26a-cloud/onramp-api@sha256:ea323006469fb6622cadd7fe6984490a914deaae4c25a96bd467b5cbb21b2e39
+      command: ["sleep", "3600"]
+      ports:
+        - containerPort: 8080
+      resources:
+        requests:
+          cpu: 500m
+          memory: 768Mi
+        limits:
+          cpu: "2"
+          memory: 1536Mi # 단독 파드가 노드에서 이걸로 버티나 — OOM이면 올려 최소값 탐색
