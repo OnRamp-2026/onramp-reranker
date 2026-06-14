@@ -1,0 +1,52 @@
+[project]
+name = "onramp-reranker"
+version = "0.1.0"
+description = "OnRamp Cross-Encoder 리랭커 서비스 (ONNX int8, CPU, torch-free) — onramp-api에서 HTTP로 호출"
+requires-python = ">=3.11"
+
+# 런타임 의존성 — onnxruntime + tokenizer 만. torch/sentence-transformers/optimum 불포함(메모리 경량).
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.30.0",
+    "pydantic>=2.0",
+    "pydantic-settings>=2.0",
+    "onnxruntime>=1.20,<2",
+    "transformers>=4.41,<5",  # AutoTokenizer(fast) — torch 없이 동작
+    "numpy>=1.26,<3",
+]
+
+[project.optional-dependencies]
+# 모델 산출(ONNX 변환·int8 양자화) 전용 — 운영 이미지에는 불포함.
+build = [
+    "optimum[onnxruntime]>=1.20",
+    "onnx>=1.17",
+    "torch",
+]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "httpx>=0.27",
+    "ruff>=0.6",
+    "mypy>=1.11",
+]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.mypy]
+python_version = "3.11"
+
+[[tool.mypy.overrides]]
+module = ["onnxruntime.*", "transformers.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["app"]
