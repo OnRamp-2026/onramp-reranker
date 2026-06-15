@@ -46,8 +46,8 @@ spec:
 
   environment {
     IMAGE_REPOSITORY = 'amdp-registry.skala-ai.com/skala26a-cloud/onramp-reranker'
-    GITOPS_REPOSITORY = 'https://github.com/OnRamp-2026/gitops.git'
-    GITOPS_VALUES_FILE = 'apps/onramp-api/values-dev.yaml'
+    // #73 인클러스터 리랭커 폐지 — GitOps digest 자동 갱신 제거(ArgoCD 결합 해제). 리랭킹은 on-demand GPU(VESSL)로 이전.
+    //     이 파이프라인은 빌드·테스트·Harbor push까지만 담당(배포 트리거 없음).
     // 사전 생성 모델(model_quantized.onnx + tokenizer)을 둔 S3 경로. 모델/arch 갱신 시 버전(v1) prefix만 올린다.
     RERANKER_MODEL_S3_URI = 's3://skala3-cloud1-finalproj-team3-reranker-artifacts-881490135253/onnx/bge-reranker-onnx-int8-avx2/v1'
     AWS_DEFAULT_REGION = 'ap-northeast-2'
@@ -59,10 +59,7 @@ spec:
         sh '''
           set -eu
           apt-get update
-          apt-get install -y --no-install-recommends git ca-certificates curl
-          # yq(mikefarah) — values-dev.yaml의 reranker.image 만 스코프 업데이트(주석 보존)
-          curl -sSL -o /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
-          chmod +x /usr/local/bin/yq
+          apt-get install -y --no-install-recommends git ca-certificates
           # awscli — S3에서 사전 생성 모델 받기 (creds는 Jenkins IRSA/node role에 reranker-artifacts read 정책 attach 전제)
           pip install --no-cache-dir awscli
           rm -rf /var/lib/apt/lists/*
@@ -165,52 +162,13 @@ EOF
         }
       }
     }
-
-    stage('Update GitOps Image Digest') {
-      when {
-        allOf {
-          branch 'main'
-          not { changeRequest() }
-        }
-      }
-      steps {
-        withCredentials([usernamePassword(
-          credentialsId: 'github-gitops-write-token',
-          usernameVariable: 'GITOPS_USERNAME',
-          passwordVariable: 'GITOPS_TOKEN'
-        )]) {
-          sh '''
-            set -eu
-            rm -rf gitops
-            ENCODED_GITOPS_USERNAME="$(python -c 'import os, urllib.parse; print(urllib.parse.quote(os.environ["GITOPS_USERNAME"], safe=""))')"
-            ENCODED_GITOPS_TOKEN="$(python -c 'import os, urllib.parse; print(urllib.parse.quote(os.environ["GITOPS_TOKEN"], safe=""))')"
-            AUTHED_REPO="$(printf '%s' "${GITOPS_REPOSITORY}" | sed "s#https://#https://${ENCODED_GITOPS_USERNAME}:${ENCODED_GITOPS_TOKEN}@#")"
-            git clone "${AUTHED_REPO}" gitops
-            cd gitops
-            git config user.name "onramp-jenkins"
-            git config user.email "onramp-jenkins@users.noreply.github.com"
-
-            # reranker.image 만 스코프 업데이트(같은 파일 app.image 보존). enabled 토글은 사람이 수동(활성화 순서).
-            REPO="${IMAGE_REPOSITORY}" TAG="${IMAGE_TAG}" DIG="${IMAGE_DIGEST}" \
-              yq -i '.reranker.image.repository = strenv(REPO) | .reranker.image.tag = strenv(TAG) | .reranker.image.digest = strenv(DIG)' "${GITOPS_VALUES_FILE}"
-
-            git diff -- "${GITOPS_VALUES_FILE}"
-            if git diff --quiet -- "${GITOPS_VALUES_FILE}"; then
-              echo "No GitOps image digest change."
-              exit 0
-            fi
-            git add "${GITOPS_VALUES_FILE}"
-            git commit -m "chore: update onramp-reranker image ${IMAGE_TAG} [skip ci]"
-            git push origin main
-          '''
-        }
-      }
-    }
+    // #73 'Update GitOps Image Digest' 스테이지 제거 — 인클러스터 리랭커 폐지로 ArgoCD 자동배포 트리거 불필요.
+    //     (GPU/VESSL 리랭커 URL은 Redis가 공급; onramp-api scripts/reranker/up.sh|down.sh 로 운영)
   }
 
   post {
     always {
-      sh 'rm -rf .venv gitops image-digest.txt models || true'
+      sh 'rm -rf .venv image-digest.txt models || true'
     }
   }
 }
