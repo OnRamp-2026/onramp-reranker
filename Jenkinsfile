@@ -18,15 +18,14 @@ spec:
       command:
         - /busybox/cat
       tty: true
-      # ⚠️ build-bake(Dockerfile)는 fp32 모델 로드+양자화로 메모리 多 — kaniko 컨테이너에 충분한 limit 필요.
-      #    노드(~3.2Gi)에서 빠듯하면 ① Dockerfile.prebuilt + 사전생성 모델(S3/git-lfs) 또는 ② 큰 빌드 노드 고려.
+      # prebuilt(Dockerfile.prebuilt)는 양자화 없이 모델 COPY + 런타임 의존성 설치만 → 메모리 가볍다(노드 3.2Gi fit).
       resources:
         requests:
           cpu: 500m
-          memory: 2Gi
+          memory: 1Gi
         limits:
           cpu: "2"
-          memory: 5Gi
+          memory: 2Gi
       volumeMounts:
         - name: kaniko-docker-config
           mountPath: /kaniko/.docker
@@ -46,8 +45,9 @@ spec:
     IMAGE_REPOSITORY = 'amdp-registry.skala-ai.com/skala26a-cloud/onramp-reranker'
     GITOPS_REPOSITORY = 'https://github.com/OnRamp-2026/gitops.git'
     GITOPS_VALUES_FILE = 'apps/onramp-api/values-dev.yaml'
-    // build-bake는 빌드 시 HF에서 base 모델 다운로드 필요(egress). avx2 양자화(노드 CPU = avx2·avx512f, vnni 미지원).
-    RERANKER_ARCH = 'avx2'
+    // 사전 생성 모델(model_quantized.onnx + tokenizer)을 둔 S3 경로. 모델/arch 갱신 시 버전(v1) prefix만 올린다.
+    RERANKER_MODEL_S3_URI = 's3://skala3-cloud1-finalproj-team3-reranker-artifacts-881490135253/onnx/bge-reranker-onnx-int8-avx2/v1'
+    AWS_DEFAULT_REGION = 'ap-northeast-2'
   }
 
   stages {
@@ -60,6 +60,8 @@ spec:
           # yq(mikefarah) — values-dev.yaml의 reranker.image 만 스코프 업데이트(주석 보존)
           curl -sSL -o /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
           chmod +x /usr/local/bin/yq
+          # awscli — S3에서 사전 생성 모델 받기 (creds는 Jenkins IRSA/node role에 reranker-artifacts read 정책 attach 전제)
+          pip install --no-cache-dir awscli
           rm -rf /var/lib/apt/lists/*
         '''
       }
@@ -75,6 +77,20 @@ spec:
         script {
           env.IMAGE_TAG = sh(script: 'git rev-parse --short=12 HEAD', returnStdout: true).trim()
         }
+      }
+    }
+
+    stage('Fetch Model from S3') {
+      steps {
+        sh '''
+          set -eu
+          mkdir -p "${WORKSPACE}/models/bge-reranker-onnx-int8"
+          aws s3 sync "${RERANKER_MODEL_S3_URI}/" "${WORKSPACE}/models/bge-reranker-onnx-int8/"
+          # 필수 산출물 확인 (없으면 빌드 실패 — S3 업로드/권한 점검)
+          test -f "${WORKSPACE}/models/bge-reranker-onnx-int8/model_quantized.onnx"
+          test -f "${WORKSPACE}/models/bge-reranker-onnx-int8/tokenizer.json"
+          echo "model fetched: $(du -sh ${WORKSPACE}/models/bge-reranker-onnx-int8 | cut -f1)"
+        '''
       }
     }
 
@@ -101,8 +117,7 @@ spec:
             set -eu
             /kaniko/executor \
               --context "${WORKSPACE}" \
-              --dockerfile "${WORKSPACE}/Dockerfile" \
-              --build-arg RERANKER_ARCH="${RERANKER_ARCH}" \
+              --dockerfile "${WORKSPACE}/Dockerfile.prebuilt" \
               --custom-platform=linux/amd64 \
               --destination "${IMAGE_REPOSITORY}:${IMAGE_TAG}" \
               --no-push
@@ -134,8 +149,7 @@ spec:
 EOF
               /kaniko/executor \
                 --context "${WORKSPACE}" \
-                --dockerfile "${WORKSPACE}/Dockerfile" \
-                --build-arg RERANKER_ARCH="${RERANKER_ARCH}" \
+                --dockerfile "${WORKSPACE}/Dockerfile.prebuilt" \
                 --custom-platform=linux/amd64 \
                 --destination "${IMAGE_REPOSITORY}:${IMAGE_TAG}" \
                 --digest-file "${WORKSPACE}/image-digest.txt"
@@ -173,7 +187,7 @@ EOF
             git config user.name "onramp-jenkins"
             git config user.email "onramp-jenkins@users.noreply.github.com"
 
-            # ⚠️ onramp-api 파이프라인과 달리 **reranker.image 만** 스코프 업데이트(같은 파일 app.image 안 건드림).
+            # reranker.image 만 스코프 업데이트(같은 파일 app.image 보존). enabled 토글은 사람이 수동(활성화 순서).
             REPO="${IMAGE_REPOSITORY}" TAG="${IMAGE_TAG}" DIG="${IMAGE_DIGEST}" \
               yq -i '.reranker.image.repository = strenv(REPO) | .reranker.image.tag = strenv(TAG) | .reranker.image.digest = strenv(DIG)' "${GITOPS_VALUES_FILE}"
 
@@ -193,7 +207,7 @@ EOF
 
   post {
     always {
-      sh 'rm -rf .venv gitops image-digest.txt || true'
+      sh 'rm -rf .venv gitops image-digest.txt models || true'
     }
   }
 }
