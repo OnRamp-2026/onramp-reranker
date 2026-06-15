@@ -9,9 +9,16 @@ on:
         description: 이미지 태그
         default: gpu-v1
         required: true
+  # main에 없어도 트리거되게 — 브랜치 HEAD에 build-gpu-* 태그를 밀면 그 커밋으로 빌드.
+  #   git tag build-gpu-1 && git push origin build-gpu-1
+  push:
+    tags:
+      - "build-gpu-*"
 
 env:
   IMAGE: ghcr.io/${{ github.repository_owner }}/onramp-reranker
+  # workflow_dispatch면 입력 tag, 태그푸시면 gpu-v1 고정.
+  TAG: ${{ github.event.inputs.tag || 'gpu-v1' }}
 
 jobs:
   build:
@@ -56,9 +63,9 @@ jobs:
           file: Dockerfile.gpu
           platforms: linux/amd64
           push: true
-          tags: ${{ env.IMAGE }}:${{ inputs.tag }}
+          tags: ${{ env.IMAGE }}:${{ env.TAG }}
 
       - name: Summary
         run: |
-          echo "pushed: ${{ env.IMAGE }}:${{ inputs.tag }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "pushed: ${{ env.IMAGE }}:${{ env.TAG }}" >> "$GITHUB_STEP_SUMMARY"
           echo "다음: GitHub Packages에서 visibility=Public 설정 → VESSL Custom Image URI에 입력" >> "$GITHUB_STEP_SUMMARY"
