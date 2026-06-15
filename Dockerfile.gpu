@@ -24,8 +24,8 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends python3.11 python3.11-venv python3-pip \
     && ln -sf /usr/bin/python3.11 /usr/local/bin/python \
     && mkdir -p /run/sshd \
-    && ssh-keygen -A \
     && rm -rf /var/lib/apt/lists/*
+# SSH host key는 빌드 시 굽지 않고 컨테이너 시작 시 생성(start-vessl.sh) — 공개 이미지에 공유 키 노출 방지.
 
 RUN addgroup --system onramp \
     && adduser --system --ingroup onramp --home /app onramp

@@ -4,6 +4,9 @@
 #       VESSL Init/start 필드에 넣거나 SSH 접속 후 직접 실행하면 된다.
 set -e
 
+# SSH host key를 시작 시 생성(이미지에 굽지 않음 — 공개 이미지에 공유 키 노출 방지).
+ssh-keygen -A 2>/dev/null || true
+
 # sshd 실행(VESSL이 자체 sshd를 띄우는 환경이면 실패해도 무시).
 /usr/sbin/sshd || true
 
