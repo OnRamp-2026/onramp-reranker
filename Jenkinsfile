@@ -46,8 +46,8 @@ spec:
 
   environment {
     IMAGE_REPOSITORY = 'amdp-registry.skala-ai.com/skala26a-cloud/onramp-reranker'
-    // #73 인클러스터 리랭커 폐지 — GitOps digest 자동 갱신 제거(ArgoCD 결합 해제). 리랭킹은 on-demand GPU(VESSL)로 이전.
-    //     이 파이프라인은 빌드·테스트·Harbor push까지만 담당(배포 트리거 없음).
+    // #73 인클러스터 리랭커 폐지 — 리랭킹은 on-demand GPU(VESSL, GHA→GHCR 빌드)로 이전.
+    //     이 파이프라인은 lint·test + PR 이미지 빌드 검증(no-push)만 담당(배포 산출물·트리거 없음).
     // 사전 생성 모델(model_quantized.onnx + tokenizer)을 둔 S3 경로. 모델/arch 갱신 시 버전(v1) prefix만 올린다.
     RERANKER_MODEL_S3_URI = 's3://skala3-cloud1-finalproj-team3-reranker-artifacts-881490135253/onnx/bge-reranker-onnx-int8-avx2/v1'
     AWS_DEFAULT_REGION = 'ap-northeast-2'
@@ -126,49 +126,15 @@ spec:
       }
     }
 
-    stage('Build and Push Image') {
-      when {
-        allOf {
-          branch 'main'
-          not { changeRequest() }
-        }
-      }
-      steps {
-        container('kaniko') {
-          withCredentials([usernamePassword(
-            credentialsId: 'harbor-robot-credential',
-            usernameVariable: 'HARBOR_USERNAME',
-            passwordVariable: 'HARBOR_PASSWORD'
-          )]) {
-            sh '''
-              set -eu
-              REGISTRY_HOST="${IMAGE_REPOSITORY%%/*}"
-              AUTH="$(printf '%s:%s' "${HARBOR_USERNAME}" "${HARBOR_PASSWORD}" | base64 | tr -d '\\n')"
-              cat > /kaniko/.docker/config.json <<EOF
-{"auths":{"${REGISTRY_HOST}":{"auth":"${AUTH}"}}}
-EOF
-              /kaniko/executor \
-                --context "${WORKSPACE}" \
-                --dockerfile "${WORKSPACE}/Dockerfile.prebuilt" \
-                --custom-platform=linux/amd64 \
-                --destination "${IMAGE_REPOSITORY}:${IMAGE_TAG}" \
-                --digest-file "${WORKSPACE}/image-digest.txt"
-            '''
-          }
-        }
-        script {
-          env.IMAGE_DIGEST = readFile('image-digest.txt').trim()
-          echo "Built image: ${env.IMAGE_REPOSITORY}@${env.IMAGE_DIGEST}"
-        }
-      }
-    }
-    // #73 'Update GitOps Image Digest' 스테이지 제거 — 인클러스터 리랭커 폐지로 ArgoCD 자동배포 트리거 불필요.
-    //     (GPU/VESSL 리랭커 URL은 Redis가 공급; onramp-api scripts/reranker/up.sh|down.sh 로 운영)
+    // #73 인클러스터 리랭커 폐지(gitops reranker.enabled:false)로 아래 스테이지 제거:
+    //   - 'Build and Push Image'(Harbor push): CPU 이미지를 배포처가 없음 + GPU는 GHA→GHCR. 죽은 산출물(+Harbor /v2/ EOF로 빌드 실패 유발).
+    //   - 'Update GitOps Image Digest': ArgoCD 자동배포 트리거 불필요.
+    //   리랭킹은 on-demand GPU(VESSL), URL은 Redis 공급(onramp-api scripts/reranker/up.sh|down.sh).
   }
 
   post {
     always {
-      sh 'rm -rf .venv image-digest.txt models || true'
+      sh 'rm -rf .venv models || true'
     }
   }
 }
