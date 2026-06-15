@@ -16,7 +16,8 @@ on:
       - "build-gpu-*"
 
 env:
-  IMAGE: ghcr.io/${{ github.repository_owner }}/onramp-reranker
+  # GHCR은 소문자만 — github.repository_owner(OnRamp-2026)가 대문자라 하드코딩.
+  IMAGE: ghcr.io/onramp-2026/onramp-reranker
   # workflow_dispatch면 입력 tag, 태그푸시면 gpu-v1 고정.
   TAG: ${{ github.event.inputs.tag || 'gpu-v1' }}
 
