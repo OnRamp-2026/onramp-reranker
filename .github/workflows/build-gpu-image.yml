@@ -46,6 +46,10 @@ jobs:
           pip install ".[build]"
           python scripts/build_onnx.py --precision fp32 --out models/bge-reranker-onnx-fp32
           ls -la models/bge-reranker-onnx-fp32
+          # 산출물 존재·비어있지 않음 검증
+          test -s models/bge-reranker-onnx-fp32/model.onnx
+          test -s models/bge-reranker-onnx-fp32/tokenizer.json
+          test -s models/bge-reranker-onnx-fp32/config.json
 
       - uses: docker/setup-buildx-action@v3
 

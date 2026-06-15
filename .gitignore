@@ -13,3 +13,4 @@ __pycache__/
 # 모델 아티팩트(대용량, ~560MB) — git에 커밋하지 않음. 빌드/배포 시 공급.
 models/
 *.onnx
+build/

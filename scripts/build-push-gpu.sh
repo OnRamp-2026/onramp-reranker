@@ -1,9 +1,11 @@
 #!/bin/bash
 # GPU 리랭커 이미지 1회 수동 빌드·push (L40S 검증용, Jenkins 자동화 전 단계).
 #
-# 사용:
-#   GHCR_USER=<github-id> GHCR_PAT=<write:packages PAT> ./scripts/build-push-gpu.sh [tag]
-#   (tag 생략 시 gpu-v1)
+# 사용 (PAT를 명령행에 노출하지 않게 read -s 로 입력):
+#   export GHCR_USER=<github-id>
+#   read -s GHCR_PAT && export GHCR_PAT     # 입력 시 화면에 안 보임
+#   ./scripts/build-push-gpu.sh [tag]       # tag 생략 시 gpu-v1
+# (참고: 느린 맥 에뮬레이션 대신 .github/workflows/build-gpu-image.yml(GHA 네이티브) 권장)
 #
 # 준비물:
 #   - Docker Desktop 실행(메모리 넉넉히 — amd64 에뮬레이션 빌드)
@@ -28,6 +30,11 @@ else
   echo "== [1/3] fp32 모델 이미 있음: ${MODEL_DIR}/model.onnx (재생성 생략) =="
 fi
 
+# 모델 산출물 존재·비어있지 않음 검증(불완전 산출물로 빌드 방지).
+test -s "${MODEL_DIR}/model.onnx"
+test -s "${MODEL_DIR}/tokenizer.json"
+test -s "${MODEL_DIR}/config.json"
+
 # 2) amd64 이미지 빌드 (단일 Dockerfile.gpu — sshd+uvicorn+모델). Mac이면 에뮬레이션이라 느림.
 echo "== [2/3] 이미지 빌드: ${IMAGE} (linux/amd64) =="
 docker build --platform linux/amd64 -f Dockerfile.gpu -t "${IMAGE}" .
@@ -44,4 +51,5 @@ echo "다음:"
 echo "  1) GitHub → onramp-2026/packages → onramp-reranker → Package settings → visibility=Public"
 echo "  2) VESSL Custom Image URI 에 ${IMAGE} 입력"
 echo "  3) Port: HTTP 8080 + TCP 22, SSH key Generate"
-echo "  4) (CMD override 대비) Init script: cd /app && nohup uvicorn app.main:app --host 0.0.0.0 --port 8080 > /tmp/reranker.log 2>&1 &"
+echo "  4) VESSL Init script는 비워둔다 — 이미지 CMD(/start-vessl.sh)가 sshd+uvicorn 실행(중복 기동 방지)"
+echo "  5) (운영 전 필수) RERANKER_API_KEY 등 인증을 Secret/env로 주입 — 검증용 1회는 생략 가능"
