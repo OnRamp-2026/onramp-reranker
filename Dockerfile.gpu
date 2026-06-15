@@ -34,6 +34,9 @@ COPY app ./app
 # GPU 런타임 의존성(onnxruntime-gpu).
 RUN python -m pip install --upgrade pip && python -m pip install ".[gpu]"
 
+# sshd 하드닝(키 기반 인증만) — 우리 start-vessl.sh가 sshd를 띄울 때 적용.
+COPY scripts/sshd_hardening.conf /etc/ssh/sshd_config.d/00-hardening.conf
+
 # 사전 생성 fp32 모델·tokenizer 동봉 + 시작 스크립트.
 COPY models/bge-reranker-onnx-fp32 /models/bge-reranker-onnx-fp32
 COPY scripts/start-vessl.sh /start-vessl.sh
