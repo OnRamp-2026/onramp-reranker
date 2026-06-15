@@ -19,6 +19,10 @@ class Settings(BaseSettings):
     # 토큰화 상한 (query+passage 쌍).
     max_length: int = 512
 
+    # 추론 sub-batch 크기. passage가 많아도 batch_size개씩 나눠 추론해 peak 메모리를
+    # 입력 크기와 무관하게 상한(#72: 실부하 20개 일괄 추론 시 OOM → 분할). 점수 결과는 동일.
+    batch_size: int = 8
+
     # ONNX Runtime intra-op 스레드 (0=기본). CPU 파드에서 과도한 스레드 메모리 방지용으로 조절 가능.
     ort_intra_op_threads: int = 0
 
