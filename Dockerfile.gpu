@@ -16,13 +16,15 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# python 3.11 (requires-python>=3.11) — ubuntu 22.04엔 기본 3.10이라 deadsnakes로 3.11.
+# python 3.11(requires-python>=3.11) + openssh-server(VESSL Workspace는 sshd:22 요구).
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends software-properties-common curl ca-certificates \
+    && apt-get install -y --no-install-recommends software-properties-common curl ca-certificates openssh-server \
     && add-apt-repository -y ppa:deadsnakes/ppa \
     && apt-get update \
     && apt-get install -y --no-install-recommends python3.11 python3.11-venv python3-pip \
     && ln -sf /usr/bin/python3.11 /usr/local/bin/python \
+    && mkdir -p /run/sshd \
+    && ssh-keygen -A \
     && rm -rf /var/lib/apt/lists/*
 
 RUN addgroup --system onramp \
@@ -36,12 +38,15 @@ RUN python -m pip install --upgrade pip && python -m pip install ".[gpu]"
 
 # 사전 생성 fp32 모델·tokenizer 동봉.
 COPY --chown=onramp:onramp models/bge-reranker-onnx-fp32 /models/bge-reranker-onnx-fp32
+COPY scripts/start-vessl.sh /start-vessl.sh
+RUN chmod +x /start-vessl.sh
 
-USER onramp
-EXPOSE 8080
+# sshd는 root 권한 필요 → VESSL Workspace는 root로 실행(USER onramp 미지정).
+EXPOSE 8080 22
 
 # GPU 로드·워밍업 시간 허용(start-period 넉넉히).
 HEALTHCHECK --interval=30s --timeout=5s --start-period=120s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=3).read()" || exit 1
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]
+# sshd(22) + uvicorn(8080) 동시 실행. (VESSL이 CMD를 override하면 uvicorn은 Init/SSH로 실행)
+CMD ["/start-vessl.sh"]
