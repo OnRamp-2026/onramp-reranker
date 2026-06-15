@@ -6,6 +6,9 @@ pipeline {
 apiVersion: v1
 kind: Pod
 spec:
+  # IRSA: 노드 IMDS HopLimit=1 이라 노드 role을 못 씀 → 이 SA에 reranker-artifacts read role을 연결(IRSA)해야
+  # Fetch Model from S3 단계가 동작한다. SA 생성·애너테이션은 infra(OnRamp-2026/infra#22) 적용 후.
+  serviceAccountName: jenkins-reranker
   restartPolicy: Never
   containers:
     - name: tools
