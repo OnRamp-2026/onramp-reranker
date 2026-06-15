@@ -59,17 +59,24 @@ class OnnxReranker:
             self.load()
         import numpy as np
 
-        features = self._tokenizer(
-            [query] * len(passages),
-            passages,
-            padding=True,
-            truncation=True,
-            max_length=self.settings.max_length,
-            return_tensors="np",
-        )
-        inputs = {k: v for k, v in features.items() if k in self._input_names}
-        logits = self._session.run(None, inputs)[0]
-        return (1.0 / (1.0 + np.exp(-logits))).reshape(-1).astype(float).tolist()
+        # passage를 batch_size개씩 나눠 추론 — peak 메모리를 입력 크기와 무관하게 상한(#72 OOM 방지).
+        # 분할해도 각 쌍 점수는 독립이라 일괄 추론과 결과 동일.
+        bs = max(1, self.settings.batch_size)
+        scores: list[float] = []
+        for start in range(0, len(passages), bs):
+            chunk = passages[start : start + bs]
+            features = self._tokenizer(
+                [query] * len(chunk),
+                chunk,
+                padding=True,
+                truncation=True,
+                max_length=self.settings.max_length,
+                return_tensors="np",
+            )
+            inputs = {k: v for k, v in features.items() if k in self._input_names}
+            logits = self._session.run(None, inputs)[0]
+            scores.extend((1.0 / (1.0 + np.exp(-logits))).reshape(-1).astype(float).tolist())
+        return scores
 
 
 _reranker: OnnxReranker | None = None
