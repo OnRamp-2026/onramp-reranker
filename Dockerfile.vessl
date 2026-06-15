@@ -1,0 +1,26 @@
+# VESSL Workspace용 이미지 — Dockerfile.gpu(순수 GPU 서비스) 기반 + sshd.
+# sshd는 VESSL Workspace 요구사항이지 리랭커 서비스 요구사항이 아니므로 여기로 분리(canonical은 Dockerfile.gpu).
+#
+# 빌드(amd64, 1회 수동 → public GHCR):
+#   docker build --platform linux/amd64 -f Dockerfile.gpu   -t onramp-reranker-gpu:local .
+#   docker build --platform linux/amd64 -f Dockerfile.vessl --build-arg BASE_IMAGE=onramp-reranker-gpu:local \
+#       -t ghcr.io/onramp-2026/onramp-reranker:gpu-vessl-<tag> .
+#   docker push ghcr.io/onramp-2026/onramp-reranker:gpu-vessl-<tag>
+ARG BASE_IMAGE=onramp-reranker-gpu:local
+FROM ${BASE_IMAGE}
+
+USER root
+
+# sshd(VESSL Workspace 요구). host key는 이미지에 굽지 않고 start-vessl.sh에서 시작 시 생성(공개 이미지 하드닝).
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends openssh-server \
+    && mkdir -p /run/sshd \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY scripts/start-vessl.sh /start-vessl.sh
+RUN chmod +x /start-vessl.sh
+
+EXPOSE 8080 22
+
+# sshd(22) + uvicorn(8080) 동시 실행. VESSL이 CMD를 override하면 uvicorn은 Init script/SSH로 실행.
+CMD ["/start-vessl.sh"]
