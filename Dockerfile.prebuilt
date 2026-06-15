@@ -21,8 +21,8 @@ RUN addgroup --system onramp \
 COPY --chown=onramp:onramp pyproject.toml ./
 COPY --chown=onramp:onramp app ./app
 
-# 런타임 의존성만(torch-free).
-RUN pip install --upgrade pip && pip install .
+# 런타임 의존성만(torch-free, CPU onnxruntime).
+RUN pip install --upgrade pip && pip install ".[cpu]"
 
 # 사전 생성 모델·tokenizer 동봉 (빌드 컨텍스트의 models/bge-reranker-onnx-int8).
 COPY --chown=onramp:onramp models/bge-reranker-onnx-int8 /models/bge-reranker-onnx-int8

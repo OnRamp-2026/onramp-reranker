@@ -4,19 +4,21 @@ version = "0.1.0"
 description = "OnRamp Cross-Encoder 리랭커 서비스 (ONNX int8, CPU, torch-free) — onramp-api에서 HTTP로 호출"
 requires-python = ">=3.11"
 
-# 런타임 의존성 — onnxruntime + tokenizer 만. torch/sentence-transformers/optimum 불포함(메모리 경량).
+# 런타임 의존성 — tokenizer 등. onnxruntime는 cpu/gpu extra로 분리(이미지별 선택, #73).
 dependencies = [
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.30.0",
     "pydantic>=2.0",
     "pydantic-settings>=2.0",
-    "onnxruntime>=1.20,<2",
     "transformers>=4.41,<5",  # AutoTokenizer(fast) — torch 없이 동작
     "numpy>=1.26,<3",
 ]
 
 [project.optional-dependencies]
-# 모델 산출(ONNX 변환·int8 양자화) 전용 — 운영 이미지에는 불포함.
+# onnxruntime 런타임 — CPU 이미지는 [cpu], GPU(VESSL) 이미지는 [gpu]. 둘은 동시 설치 불가라 분리.
+cpu = ["onnxruntime>=1.20,<2"]
+gpu = ["onnxruntime-gpu>=1.20,<2"]
+# 모델 산출(ONNX 변환·int8/fp32) 전용 — 운영 이미지에는 불포함.
 build = [
     "optimum[onnxruntime]>=1.20",
     "onnx>=1.17",

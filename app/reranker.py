@@ -48,7 +48,12 @@ class OnnxReranker:
             opts = ort.SessionOptions()
             if self.settings.ort_intra_op_threads > 0:
                 opts.intra_op_num_threads = self.settings.ort_intra_op_threads
-            self._session = ort.InferenceSession(str(model_path), sess_options=opts, providers=["CPUExecutionProvider"])
+            # 이미지가 onnxruntime-gpu(GPU)면 CUDA 우선, CPU 이미지면 CPU — 단일 코드로 양쪽 지원(#73).
+            available = ort.get_available_providers()
+            providers = [p for p in ("CUDAExecutionProvider", "CPUExecutionProvider") if p in available] or [
+                "CPUExecutionProvider"
+            ]
+            self._session = ort.InferenceSession(str(model_path), sess_options=opts, providers=providers)
             self._input_names = {i.name for i in self._session.get_inputs()}
 
     def rerank(self, query: str, passages: list[str]) -> list[float]:
