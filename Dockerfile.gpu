@@ -19,11 +19,13 @@ WORKDIR /app
 
 # python 3.11(requires-python>=3.11) + openssh-server(VESSL Workspace는 sshd:22 요구).
 # SSH host key는 빌드 시 굽지 않고 start-vessl.sh에서 시작 시 생성(공개 이미지에 공유 키 노출 방지).
+# DEBIAN_FRONTEND=noninteractive — tzdata 등 대화형 프롬프트 방지(없으면 빌드가 "Geographic area:"에서 무한 대기).
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends software-properties-common curl ca-certificates openssh-server \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        software-properties-common curl ca-certificates openssh-server tzdata \
     && add-apt-repository -y ppa:deadsnakes/ppa \
     && apt-get update \
-    && apt-get install -y --no-install-recommends python3.11 python3.11-venv python3-pip \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends python3.11 python3.11-venv python3-pip \
     && ln -sf /usr/bin/python3.11 /usr/local/bin/python \
     && mkdir -p /run/sshd \
     && rm -rf /var/lib/apt/lists/*
