@@ -48,9 +48,7 @@ class OnnxReranker:
             opts = ort.SessionOptions()
             if self.settings.ort_intra_op_threads > 0:
                 opts.intra_op_num_threads = self.settings.ort_intra_op_threads
-            self._session = ort.InferenceSession(
-                str(model_path), sess_options=opts, providers=["CPUExecutionProvider"]
-            )
+            self._session = ort.InferenceSession(str(model_path), sess_options=opts, providers=["CPUExecutionProvider"])
             self._input_names = {i.name for i in self._session.get_inputs()}
 
     def rerank(self, query: str, passages: list[str]) -> list[float]:
