@@ -104,7 +104,7 @@ spec:
           python -m venv .venv
           . .venv/bin/activate
           pip install --upgrade pip
-          pip install ".[dev]"
+          pip install ".[cpu,dev]"  # onnxruntime(cpu) + 테스트 도구. (gpu는 CUDA 필요해 CI 테스트는 cpu)
           ruff format --check app tests
           ruff check app tests
           PYTHONPATH="${WORKSPACE}" pytest tests -v

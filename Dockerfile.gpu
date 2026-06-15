@@ -1,0 +1,47 @@
+# GPU(VESSL) 런타임 — onnxruntime-gpu(CUDA). 모델은 fp32 ONNX(int8은 CPU 전용이라 GPU엔 부적합).
+# ⚠️ CUDA/cuDNN 베이스 버전은 onnxruntime-gpu 요구 + VESSL GPU 드라이버에 맞춰 확정한다.
+#    onnxruntime-gpu 1.20.x → CUDA 12.x + cuDNN 9. VESSL GPU(드라이버) 확인 후 아래 태그 조정.
+# 빌드 전: 사전 생성 fp32 모델을 models/bge-reranker-onnx-fp32 에 둔다.
+#   python scripts/build_onnx.py --precision fp32 --out models/bge-reranker-onnx-fp32
+FROM nvidia/cuda:12.6.3-cudnn-runtime-ubuntu22.04 AS runtime
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    HF_HUB_OFFLINE=1 \
+    TRANSFORMERS_OFFLINE=1 \
+    RERANKER_ONNX_DIR=/models/bge-reranker-onnx-fp32 \
+    RERANKER_ONNX_FILE=model.onnx \
+    BATCH_SIZE=16
+
+WORKDIR /app
+
+# python 3.11 (requires-python>=3.11) — ubuntu 22.04엔 기본 3.10이라 deadsnakes로 3.11.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends software-properties-common curl ca-certificates \
+    && add-apt-repository -y ppa:deadsnakes/ppa \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends python3.11 python3.11-venv python3-pip \
+    && ln -sf /usr/bin/python3.11 /usr/local/bin/python \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN addgroup --system onramp \
+    && adduser --system --ingroup onramp --home /app onramp
+
+COPY --chown=onramp:onramp pyproject.toml ./
+COPY --chown=onramp:onramp app ./app
+
+# GPU 런타임 의존성(onnxruntime-gpu).
+RUN python -m pip install --upgrade pip && python -m pip install ".[gpu]"
+
+# 사전 생성 fp32 모델·tokenizer 동봉.
+COPY --chown=onramp:onramp models/bge-reranker-onnx-fp32 /models/bge-reranker-onnx-fp32
+
+USER onramp
+EXPOSE 8080
+
+# GPU 로드·워밍업 시간 허용(start-period 넉넉히).
+HEALTHCHECK --interval=30s --timeout=5s --start-period=120s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=3).read()" || exit 1
+
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]

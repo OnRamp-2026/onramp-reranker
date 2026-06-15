@@ -26,11 +26,26 @@ def main() -> None:
         help="양자화 타깃 명령셋 (운영 노드 CPU 지원 범위로. avx512_vnni 미지원 노드 → avx2/avx512)",
     )
     p.add_argument("--model", default=DEFAULT_MODEL, help=f"모델명 (기본 {DEFAULT_MODEL})")
+    p.add_argument(
+        "--precision",
+        default="int8",
+        choices=["int8", "fp32"],
+        help="int8: CPU용 동적 양자화(model_quantized.onnx) | fp32: GPU(VESSL)용, 양자화 생략(model.onnx)",
+    )
     args = p.parse_args()
 
     from optimum.onnxruntime import ORTModelForSequenceClassification, ORTQuantizer
     from optimum.onnxruntime.configuration import AutoQuantizationConfig
     from transformers import AutoTokenizer
+
+    if args.precision == "fp32":
+        # GPU(CUDAExecutionProvider)는 fp32 ONNX를 그대로 사용 — int8(QDQ)은 CPU 전용이라 부적합.
+        print(f"[1/2] {args.model} → ONNX fp32 export ({args.out}) — GPU용, 양자화 생략", flush=True)
+        ort = ORTModelForSequenceClassification.from_pretrained(args.model, export=True)
+        ort.save_pretrained(args.out)
+        AutoTokenizer.from_pretrained(args.model).save_pretrained(args.out)
+        print(f"[2/2] 완료 → {args.out} (model.onnx + tokenizer). 런타임: RERANKER_ONNX_FILE=model.onnx", flush=True)
+        return
 
     print(f"[1/3] {args.model} → ONNX fp32 export ({args.fp32_dir})", flush=True)
     ort = ORTModelForSequenceClassification.from_pretrained(args.model, export=True, provider="CPUExecutionProvider")
