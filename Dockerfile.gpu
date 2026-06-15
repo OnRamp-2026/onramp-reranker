@@ -1,6 +1,7 @@
-# GPU 런타임 — onnxruntime-gpu(CUDA). 순수 리랭커 서비스(uvicorn만). 모델은 fp32 ONNX(int8은 CPU 전용).
+# GPU(VESSL Workspace) 런타임 — onnxruntime-gpu(CUDA) + 리랭커 + sshd. 단일 이미지.
+# sshd는 VESSL Workspace 접속 요구사항. 기본 실행은 sshd(22) + uvicorn(8080) 둘 다(start-vessl.sh).
+# 모델은 fp32 ONNX(int8은 CPU 전용이라 GPU엔 부적합).
 # ⚠️ CUDA/cuDNN 베이스는 onnxruntime-gpu 요구 + 대상 GPU 드라이버에 맞춘다(onnxruntime-gpu 1.20 → CUDA 12.x/cuDNN 9).
-# VESSL Workspace용(sshd 포함)은 Dockerfile.vessl(이 이미지 기반) 참조.
 # 빌드 전: 사전 생성 fp32 모델을 models/bge-reranker-onnx-fp32 에 둔다.
 #   python scripts/build_onnx.py --precision fp32 --out models/bge-reranker-onnx-fp32
 FROM nvidia/cuda:12.6.3-cudnn-runtime-ubuntu22.04 AS runtime
@@ -16,32 +17,34 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# python 3.11(requires-python>=3.11) — ubuntu 22.04 기본 3.10이라 deadsnakes로 3.11.
+# python 3.11(requires-python>=3.11) + openssh-server(VESSL Workspace는 sshd:22 요구).
+# SSH host key는 빌드 시 굽지 않고 start-vessl.sh에서 시작 시 생성(공개 이미지에 공유 키 노출 방지).
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends software-properties-common curl ca-certificates \
+    && apt-get install -y --no-install-recommends software-properties-common curl ca-certificates openssh-server \
     && add-apt-repository -y ppa:deadsnakes/ppa \
     && apt-get update \
     && apt-get install -y --no-install-recommends python3.11 python3.11-venv python3-pip \
     && ln -sf /usr/bin/python3.11 /usr/local/bin/python \
+    && mkdir -p /run/sshd \
     && rm -rf /var/lib/apt/lists/*
 
-RUN addgroup --system onramp \
-    && adduser --system --ingroup onramp --home /app onramp
-
-COPY --chown=onramp:onramp pyproject.toml ./
-COPY --chown=onramp:onramp app ./app
+COPY pyproject.toml ./
+COPY app ./app
 
 # GPU 런타임 의존성(onnxruntime-gpu).
 RUN python -m pip install --upgrade pip && python -m pip install ".[gpu]"
 
-# 사전 생성 fp32 모델·tokenizer 동봉.
-COPY --chown=onramp:onramp models/bge-reranker-onnx-fp32 /models/bge-reranker-onnx-fp32
+# 사전 생성 fp32 모델·tokenizer 동봉 + 시작 스크립트.
+COPY models/bge-reranker-onnx-fp32 /models/bge-reranker-onnx-fp32
+COPY scripts/start-vessl.sh /start-vessl.sh
+RUN chmod +x /start-vessl.sh
 
-USER onramp
-EXPOSE 8080
+# sshd는 root 권한 필요 → root로 실행(VESSL Workspace).
+EXPOSE 8080 22
 
 # GPU 로드·워밍업 시간 허용(start-period 넉넉히).
 HEALTHCHECK --interval=30s --timeout=5s --start-period=120s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=3).read()" || exit 1
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]
+# sshd(22) + uvicorn(8080) 동시 실행. (VESSL이 CMD를 override하면 uvicorn은 Init script/SSH로 실행)
+CMD ["/start-vessl.sh"]
